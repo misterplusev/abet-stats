@@ -1,7 +1,7 @@
 # abet-stats — Script Inventory
 
-**Synced:** 2026-10-09 (machine clock) from `D:\abet_dev\claude_dashboard_pills_20260925` (worktree, uncommitted state as of the fresh-eyes audit) + `D:\nfl-progression\proof`.
-**Verification:** every line count below matches the fresh-measured counts in `docs/20261009_143000_…FRESH_EYES_AUDIT….md`. Secret scan (webhook URLs, gh tokens, service keys): **zero hits** — RULE 13 clean.
+**Synced:** 2026-10-10 (machine clock corrected — stamps now real) from `D:\abet_dev\claude_dashboard_pills_20260925` (worktree) + `D:\nfl-progression\proof`. P0.5 fix batch applied: sentinel → v1.0.2 (B2 + B4); refresh-workflow snapshot gained the games.parquet mirror (B3).
+**Verification:** line counts re-measured 2026-10-10; see `docs/20261009_143000_…FRESH_EYES_AUDIT….md` (bug register B1–B4) and `docs/20261010_150000_…P0_5_FIX_BATCH….md` (fixes + gate proofs). Secret scan (webhook URLs, gh tokens, service keys): **zero hits** — RULE 13 clean.
 
 ## nfl/publish — 1,446 lines
 
@@ -14,19 +14,19 @@
 | augment_catalog.py | 117 | schedules/pbp/pfr stat augmentation + qualifiers rebuild (mandatory step) |
 | check_module_sizes.py | 61 | dev-only bundle-size check |
 
-## nfl/monitor — 892 lines
+## nfl/monitor — 927 lines
 
 | Script | Lines | Role |
 |---|---|---|
-| nfl_data_sentinel.py | 670 | NFL Data Sentinel v1.0.1 — 8 feeds, 9 alarm types, EWMA α=0.25 (trusted n≥5), MAD arrival windows, per-cut suppression, digest + alarms, CLI (check/status/replay-test) |
-| build_sentinel_proof.py | 222 | renders the sentinel proof page |
+| nfl_data_sentinel.py | 702 | NFL Data Sentinel v1.0.2 — 8 feeds, 9 alarm types, EWMA α=0.25 (trusted n≥5), MAD arrival windows, per-cut suppression, digest + alarms, CLI (check/status/replay-test); v1.0.2: bundle staleness from generated_at with mtime fallback (B2), one-sided CUSUM wired live (B4) |
+| build_sentinel_proof.py | 225 | renders the sentinel proof page (v1.0.2: bundles table gained generated_at + ts source columns) |
 
-## nfl/workflows — 165 lines (reference snapshots, +3-line banner each)
+## nfl/workflows — 171 lines (reference snapshots, +3-line banner each)
 
 | File | Lines | Role |
 |---|---|---|
-| nfl-data-refresh.yml | 103 | SNAPSHOT of live refresh workflow (export → mirrors → augment → career → inventory → gates → bot commit → optional receipt; Tue/Wed 14:00Z) |
-| nfl-data-sentinel.yml | 62 | SNAPSHOT of live sentinel workflow (daily 16:00Z --check --digest, --replay-test, state commit) |
+| nfl-data-refresh.yml | 107 | SNAPSHOT of live refresh workflow (export → mirrors + games.parquet → augment → career → inventory → gates → bot commit → optional receipt; Tue/Wed 14:00Z) |
+| nfl-data-sentinel.yml | 64 | SNAPSHOT of live sentinel workflow (daily 16:00Z --check --digest, --replay-test, state commit) |
 
 ## mlb/publish — 667 lines
 
@@ -49,11 +49,11 @@
 
 | Lane | Lines |
 |---|---|
-| nfl (publish + monitor + workflows) | 2,503 |
+| nfl (publish + monitor + workflows) | 2,544 |
 | mlb | 667 |
 | proof harness | 1,788 |
-| **Scripts in this repo** | **4,958** |
-| docs (4 files) | — |
+| **Scripts in this repo** | **4,999** |
+| docs (5 files) | — |
 
 For context, the full NFL Stats build these scripts serve is ~14.0K first-party lines (module UI 8,727 + these scripts + Discord poster 225) — see the fresh-eyes audit for the complete breakdown.
 

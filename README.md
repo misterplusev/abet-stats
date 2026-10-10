@@ -15,7 +15,7 @@ abet-stats/
 ├── nfl/
 │   ├── publish/          # nflverse exporter, catalog augmentation, career leaders,
 │   │                     # stat docs, widget inventory, module size check
-│   ├── monitor/          # NFL Data Sentinel v1.0.1 + sentinel proof builder
+│   ├── monitor/          # NFL Data Sentinel v1.0.2 + sentinel proof builder
 │   └── workflows/        # REFERENCE SNAPSHOTS of the live workflows (labeled, do not run)
 ├── mlb/
 │   └── publish/          # MLB stats exporter
@@ -75,3 +75,4 @@ The augment step is load-bearing: skipping it silently wipes catalog qualifiers/
 - `docs/20261008_112000_NFL_DATA_SENTINEL_v1_0_1.md` — sentinel design
 - `docs/20261008_133000_…MASTER_PITCH….md` — cloud integration plan (P0–P7, decisions D-1..D-6)
 - `docs/20261009_143000_…FRESH_EYES_AUDIT….md` — bug register (B1–B4) + full inventory
+- `docs/20261010_150000_…P0_5_FIX_BATCH….md` — B1–B4 fixes + gate proofs (sentinel v1.0.2)

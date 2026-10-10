@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""NFL Data Sentinel v1.0.1 - smart nflverse release monitor (stdlib only).
+"""NFL Data Sentinel v1.0.2 - smart nflverse release monitor (stdlib only).
 
 Watches every nflverse/nflverse-data release that feeds the NFL Stats module,
 logs each observation to a JSONL audit trail, learns arrival and size baselines
@@ -43,7 +43,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 REPO = "nflverse/nflverse-data"
 API_LIST = f"https://api.github.com/repos/{REPO}/releases?per_page=100"
 API_TAG = f"https://api.github.com/repos/{REPO}/releases/tags/{{tag}}"
@@ -312,6 +312,22 @@ def observe_feed(name: str, cfg: dict, state: dict, tag_index, token, events: li
         if not warming and abs(z) > Z_THRESHOLD:
             ev["alarms"].append("SIZE_ANOMALY")
             detail_bits.append(f"size z={z:+.1f}")
+    # B4 fix (v1.0.2): the advertised one-sided CUSUM now runs live. Steps only
+    # on fresh cuts (re-observing an unchanged release must not accumulate
+    # drift) and only once the size baseline is trusted (n >= MIN_BASELINE_N,
+    # the same trust gate as the z alarm). On alarm the statistic resets, so
+    # one drift episode pages once per episode rather than once per later cut.
+    if bytes_watched > 0 and (prev_key is None or is_new_cut) and base.get("n", 0) >= MIN_BASELINE_N:
+        sigma = max(math.sqrt(max(base.get("var", 0.0), 0.0)), abs(base["mu"]) * 0.002, 1.0)
+        c = feed_state.setdefault("cusum", {"s": 0.0, "n": 0})
+        c["s"], drift = cusum_step(c.get("s", 0.0), bytes_watched, base["mu"], sigma)
+        c["n"] += 1
+        ev["cusum_s"] = round(c["s"], 2)
+        if drift:
+            c["s"] = 0.0
+            if "SIZE_ANOMALY" not in ev["alarms"]:
+                ev["alarms"].append("SIZE_ANOMALY")
+                detail_bits.append(f"cusum drift (sustained size growth over {c['n']} cuts)")
     if bytes_watched > 0 and (prev_key is None or is_new_cut):
         mu, var = ewma_update(base.get("mu"), base.get("var", 0.0), bytes_watched)
         feed_state["bytes"] = {"mu": round(mu, 1), "var": round(var, 1), "n": base.get("n", 0) + 1}
@@ -364,10 +380,23 @@ def check_bundles(state: dict, events: list, remote_cut):
                 weeks = doc[key]
                 break
         contiguous = weeks_contiguous(weeks)
+        # B2 fix (v1.0.2): the bundle's own generated_at is the true data-cut
+        # time. mtime is a fallback only - on CI a fresh checkout stamps every
+        # file with checkout time, which used to mask stale bundles forever.
+        generated_dt = None
+        raw_ts = doc.get("generated_at") if isinstance(doc, dict) else None
+        if isinstance(raw_ts, str):
+            try:
+                generated_dt = parse_iso(raw_ts)
+            except ValueError:
+                generated_dt = None
+        bundle_dt = generated_dt or datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
         bundles[path.name] = {
             "weeks": len(weeks) if weeks else 0,
             "last_week": max(weeks) if weeks else 0,
             "contiguous": contiguous,
+            "generated_at": iso(bundle_dt),
+            "ts_source": "generated_at" if generated_dt else "mtime",
             "mtime": iso(datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)),
         }
         if not contiguous:
@@ -375,7 +404,7 @@ def check_bundles(state: dict, events: list, remote_cut):
                            "detail": f"weeks not contiguous: {weeks}", "alarms": ["WEEKS_NOT_CONTIGUOUS"]})
     live = bundles.get("season_2026.json")
     if live and remote_cut:
-        stale_h = (remote_cut - parse_iso(live["mtime"])).total_seconds() / 3600.0
+        stale_h = (remote_cut - parse_iso(live["generated_at"])).total_seconds() / 3600.0
         live["stale_hours_vs_remote"] = round(stale_h, 1)
         if stale_h > STALE_HOURS:
             events.append({"ts": iso(now()), "type": "alarm", "feed": "season_2026.json",
@@ -492,9 +521,10 @@ def print_summary(events: list, state: dict) -> None:
             continue
         alarms = "".join(" !" + a for a in ev.get("alarms", []))
         z = f" z={ev['z']:+.1f}" if ev.get("z") is not None else ""
+        c = f" c={ev['cusum_s']:.1f}" if ev.get("cusum_s") is not None else ""
         hs = f"{ev['hours_since_cut']}h" if ev.get("hours_since_cut") is not None else "-"
         print(f"  {str(ev.get('feed')):<14} {str(ev.get('status')):<20} {hs:>8} "
-              f"{ev.get('watched_assets', 0):>4}a {ev.get('watched_bytes', 0) / 1e6:>7.1f}MB{z}{alarms}")
+              f"{ev.get('watched_assets', 0):>4}a {ev.get('watched_bytes', 0) / 1e6:>7.1f}MB{z}{c}{alarms}")
     b = state.get("bundles", {}).get("season_2026.json")
     if b:
         print(f"  2026 bundle: weeks 1..{b.get('last_week')} contiguous={b.get('contiguous')} "
@@ -636,9 +666,11 @@ def print_status() -> int:
     print("-" * 86)
     for tag, fs in sorted(state.get("feeds", {}).items()):
         b = fs.get("bytes") or {}
+        c = fs.get("cusum") or {}
         win = learned_window(fs, now().weekday())
+        cus = f" cusum_s={c['s']:.1f}/n={c['n']}" if c else ""
         print(f"  {tag:<15} last_cut={fs.get('last_cut_ts', '-'):<20} obs={fs.get('obs', 0):<3} "
-              f"bytes_mu={b.get('mu')} n={b.get('n')} window={win}")
+              f"bytes_mu={b.get('mu')} n={b.get('n')} window={win}{cus}")
     print("-" * 86)
     for name, b in sorted(state.get("bundles", {}).items()):
         if b.get("weeks"):

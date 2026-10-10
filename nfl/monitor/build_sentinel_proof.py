@@ -152,7 +152,7 @@ def main() -> int:
 
     add("<h2 id='bundles'>4. Shipped-bundle continuity and freshness</h2>")
     add("<table><tr><th>bundle</th><th>weeks</th><th>last week</th><th>contiguous</th>"
-        "<th>stale vs remote (h)</th><th>mtime (UTC)</th></tr>")
+        "<th>stale vs remote (h)</th><th>generated_at (UTC)</th><th>ts source</th><th>mtime (UTC)</th></tr>")
     for name, b in sorted(state.get("bundles", {}).items()):
         if not b.get("weeks"):
             continue
@@ -160,7 +160,10 @@ def main() -> int:
         add("<tr>"
             f"<td>{esc(name)}</td><td>{esc(b.get('weeks'))}</td><td>{esc(b.get('last_week'))}</td>"
             f"<td class='{contig_cls}'>{esc(b.get('contiguous'))}</td>"
-            f"<td>{esc(b.get('stale_hours_vs_remote', 'n/a'))}</td><td class='small'>{esc(b.get('mtime'))}</td></tr>")
+            f"<td>{esc(b.get('stale_hours_vs_remote', 'n/a'))}</td>"
+            f"<td class='small'>{esc(b.get('generated_at', '-'))}</td>"
+            f"<td class='small'>{esc(b.get('ts_source', 'legacy'))}</td>"
+            f"<td class='small'>{esc(b.get('mtime'))}</td></tr>")
     add("</table>")
 
     add("<h2 id='events'>5. Event log (last 80, newest first)</h2>")
