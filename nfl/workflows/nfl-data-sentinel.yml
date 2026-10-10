@@ -1,4 +1,6 @@
-# REFERENCE SNAPSHOT - the LIVE workflow runs from abet-mlb-monitor-widgets/.github/workflows/nfl-data-sentinel.yml # This copy documents the pipeline for the scripts in this repo. abet-stats has NO .github/workflows # directory, so zero GitHub Actions minutes are ever consumed here.
+# REFERENCE SNAPSHOT - the LIVE workflow runs from abet-mlb-monitor-widgets/.github/workflows/nfl-data-sentinel.yml
+# This copy documents the pipeline for the scripts in this repo. abet-stats has NO .github/workflows
+# directory, so zero GitHub Actions minutes are ever consumed here.
 name: NFL data sentinel
 
 # Daily smart check of every nflverse-data release that feeds the NFL Stats module:
