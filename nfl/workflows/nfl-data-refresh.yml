@@ -1,0 +1,103 @@
+# REFERENCE SNAPSHOT - the LIVE workflow runs from abet-mlb-monitor-widgets/.github/workflows/nfl-data-refresh.yml # This copy documents the pipeline for the scripts in this repo. abet-stats has NO .github/workflows # directory, so zero GitHub Actions minutes are ever consumed here.
+name: NFL data refresh
+
+# Consolidated refresh pipeline (supersedes refresh-nfl-stats-data.yml, which was
+# retired 2026-10-07 because it skipped augment_catalog.py and would silently wipe
+# catalog qualifiers/stat_sources - the exact regression the module suite caught).
+# Order is mandatory: export -> mirrors -> augment -> career leaders -> inventory.
+
+on:
+  schedule:
+    - cron: '0 14 * * 2,3'   # Tue+Wed 14:00 UTC (10:00 ET) - after MNF and nflverse weekly releases
+  workflow_dispatch: {}
+
+concurrency:
+  group: nfl-data-refresh
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_NFL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install exporter dependencies
+        run: pip install --quiet --disable-pip-version-check pandas pyarrow requests
+
+      - name: Refresh live-season bundles (2025-2026) + mirrors
+        run: |
+          python scripts/publish/nfl_stats_export.py --seasons 2025-2026 --refresh --cache .nfl-cache
+          cp .nfl-cache/github.com__nflverse__nflverse-data__releases__download__stats_player__stats_player_week_2025.parquet public/nfl-stats/parquet/stats_player_week_2025.parquet
+          cp .nfl-cache/github.com__nflverse__nflverse-data__releases__download__stats_player__stats_player_week_2026.parquet public/nfl-stats/parquet/stats_player_week_2026.parquet
+          cp .nfl-cache/github.com__nflverse__nflverse-data__releases__download__stats_team__stats_team_week_2025.parquet public/nfl-stats/parquet/stats_team_week_2025.parquet
+          cp .nfl-cache/github.com__nflverse__nflverse-data__releases__download__stats_team__stats_team_week_2026.parquet public/nfl-stats/parquet/stats_team_week_2026.parquet
+          cp .nfl-cache/github.com__nflverse__nflverse-data__releases__download__pbp__play_by_play_2026.parquet public/nfl-stats/parquet/play_by_play_2026.parquet
+
+      - name: Regenerate derived artifacts (order is mandatory)
+        run: |
+          python scripts/publish/augment_catalog.py
+          python scripts/publish/build_career_leaders.py
+          python scripts/publish/build_widget_inventory.py
+
+      - name: Strict-JSON gate on every bundle
+        run: |
+          python - <<'PY'
+          import json, pathlib, sys
+          def reject(token):
+              raise ValueError(f"non-finite token: {token}")
+          files = sorted(pathlib.Path("public/nfl-stats/data").glob("*.json"))
+          bad = []
+          for f in files:
+              try:
+                  json.loads(f.read_text(encoding="utf-8"), parse_constant=reject)
+              except ValueError as exc:
+                  bad.append((f.name, str(exc)))
+          print(f"checked {len(files)} bundles, invalid: {bad or 'none'}")
+          sys.exit(1 if bad else 0)
+          PY
+
+      - name: Data integrity gate
+        run: |
+          python - <<'PY'
+          import json, pathlib, sys
+          d = json.loads(pathlib.Path("public/nfl-stats/data/season_2026.json").read_text())
+          weeks = d["weeks"]
+          ok = weeks == list(range(1, len(weeks) + 1)) and len(weeks) >= 3
+          print(f"2026 weeks: {weeks[0]}-{weeks[-1]} ({len(weeks)}) -> {'OK' if ok else 'FAIL'}")
+          sys.exit(0 if ok else 1)
+          PY
+
+      - name: Commit refreshed data
+        run: |
+          git config user.name  "abet-data-bot"
+          git config user.email "abet-data-bot@users.noreply.github.com"
+          git add public/nfl-stats/data public/nfl-stats/parquet
+          if git diff --cached --quiet; then
+            echo "No data changes this run."
+          else
+            WEEK=$(python -c "import json; print(json.load(open('public/nfl-stats/data/season_2026.json'))['weeks'][-1])")
+            git commit -m "data(nfl): weekly refresh - 2026 through week $WEEK"
+            git push
+          fi
+
+      # Optional receipt to the NFL data-monitor channel. Enabled by repo secret
+      # DISCORD_WEBHOOK_NFL (Settings -> Secrets -> Actions); skipped otherwise.
+      # NOTE: secrets cannot be used in step 'if:' - hence the job-level env above.
+      - name: Discord receipt (optional)
+        if: env.DISCORD_WEBHOOK != ''
+        env:
+          WEBHOOK: ${{ env.DISCORD_WEBHOOK }}
+        run: |
+          WEEK=$(python -c "import json; print(json.load(open('public/nfl-stats/data/season_2026.json'))['weeks'][-1])")
+          CONTENT="**NFL Stats module data refresh.** season 2026 through week $WEEK - bundles + parquet mirrors + career leaders rebuilt by GitHub Actions ($GITHUB_SHA)."
+          curl -sf -H "Content-Type: application/json" -d "{\"content\":\"$CONTENT\"}" "$WEBHOOK" && echo "receipt posted" || echo "receipt skipped (webhook refused)"

@@ -1,0 +1,62 @@
+# REFERENCE SNAPSHOT - the LIVE workflow runs from abet-mlb-monitor-widgets/.github/workflows/nfl-data-sentinel.yml # This copy documents the pipeline for the scripts in this repo. abet-stats has NO .github/workflows # directory, so zero GitHub Actions minutes are ever consumed here.
+name: NFL data sentinel
+
+# Daily smart check of every nflverse-data release that feeds the NFL Stats module:
+#   - discovers ALL release tags (one API call), logs every observation
+#   - learns size baselines (EWMA) + weekday arrival windows (MAD) + CUSUM drift
+#   - posts a digest to the NFL Discord channel (needs repo secret DISCORD_WEBHOOK_NFL;
+#     webhooks are never committed - E:/abet CLAUDE_CODE_RULES.md RULE 13)
+#   - commits scripts/monitor/state so the cloud run keeps its memory between runs
+# NOTE: scheduled workflows only run from the repository's default branch once merged.
+
+on:
+  schedule:
+    - cron: '0 16 * * *'   # daily 16:00 UTC - after Tue/Wed nflverse cuts and post-MNF pbp
+  workflow_dispatch: {}
+
+concurrency:
+  group: nfl-data-sentinel
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sentinel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DISCORD_WEBHOOK_NFL: ${{ secrets.DISCORD_WEBHOOK_NFL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run sentinel (check + digest)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/monitor/nfl_data_sentinel.py --check --digest
+
+      - name: Run offline validation
+        run: python scripts/monitor/nfl_data_sentinel.py --replay-test
+
+      - name: Commit sentinel state + log
+        run: |
+          git config user.name "abet-data-bot"
+          git config user.email "abet-data-bot@users.noreply.github.com"
+          git add scripts/monitor/state
+          if git diff --cached --quiet; then
+            echo "No sentinel state change this run."
+          else
+            git commit -m "monitor(nfl): sentinel state $(date -u +%Y-%m-%dT%H:%MZ)"
+            git push
+          fi
+
+      - name: Upload sentinel state artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nfl-data-sentinel-state
+          path: scripts/monitor/state/
+          retention-days: 30
