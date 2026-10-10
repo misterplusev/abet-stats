@@ -44,6 +44,8 @@ jobs:
           cp .nfl-cache/github.com__nflverse__nflverse-data__releases__download__stats_team__stats_team_week_2025.parquet public/nfl-stats/parquet/stats_team_week_2025.parquet
           cp .nfl-cache/github.com__nflverse__nflverse-data__releases__download__stats_team__stats_team_week_2026.parquet public/nfl-stats/parquet/stats_team_week_2026.parquet
           cp .nfl-cache/github.com__nflverse__nflverse-data__releases__download__pbp__play_by_play_2026.parquet public/nfl-stats/parquet/play_by_play_2026.parquet
+          # games.parquet: single all-seasons file (schedules release) - consumed by loadGames() in src/lib/nflParquet.js
+          cp .nfl-cache/github.com__nflverse__nflverse-data__releases__download__schedules__games.parquet public/nfl-stats/parquet/games.parquet
 
       - name: Regenerate derived artifacts (order is mandatory)
         run: |
